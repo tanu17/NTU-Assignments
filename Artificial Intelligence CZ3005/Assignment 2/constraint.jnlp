@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+"
+  codebase="http://www.aispace.org/"
+>
+<information>
+  <title>Consistency for CSPs</title>
+  <vendor>AIspace</vendor>
+  <homepage href="www.aispace.org" />
+</information>
+<offline-allowed/>
+<security>
+  <all-permissions/>
+</security>
+<resources>
+  <j2se version="1.5+" />
+  <jar href="constraint/version4.6.1signed/constraint.jar"/>
+</resources>
+<application-desc />
+</jnlp>
+
