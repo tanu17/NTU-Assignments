@@ -1,0 +1,444 @@
+---
+title: "Cx4073 : Assignment 1"
+author: "Chiripal Vansh Jaiprakash"
+date: "U1622893A"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+### Analysis of Naval Propulsion Data
+
+Import the CSV data file `assign1_NavalData.csv` for analysis, and quickly check the structure of the data.
+
+```{r}
+install.packages("corrplot", repos = "https://cran.asia/")
+install.packages("ggfortify", repos = "https://cran.asia/")
+install.packages("randomForest", repos = "https://cran.asia/")
+install.packages("miscTools", repos = "https://cran.asia/")
+install.packages("FNN", repos = "https://cran.asia/")
+install.packages("extraTrees", repos = "https://cran.asia/")
+rm(list = ls())
+# Importing the Dataset Naval Data 
+# There are 16 features and 2 outputs with 10,000 rows
+navalData <- read.csv("assign1_NavalData.csv", header = TRUE)
+# Structure of the dataset
+str(navalData)
+```
+We find that data is stored in data.frame
+`X2`, `X9` and `X12` have integer datatype and the remaining are numeric data type
+The following table summarizes the features/variables in the dataset. You will also find them in the text file `assign1_FeatureNames.txt`. The features/variables `X1` to `X16` are the predictors, while `Y1` and `Y2` are the *target* response variables.
+
+| Variable | Description |
+| -------- | ----------- |
+| X1 | Lever position (lp) |
+| X2 | Ship speed (v) [knots] |
+| X3 | Gas Turbine shaft torque (GTT) [kN m] |
+| X4 | Gas Turbine rate of revolutions (GTn) [rpm] |
+| X5 | Gas Generator rate of revolutions (GGn) [rpm] |
+| X6 | Starboard Propeller Torque (Ts) [kN] |
+| X7 | Port Propeller Torque (Tp) [kN] |
+| X8 | HP Turbine exit temperature (T48) [C] |
+| X9 | GT Compressor inlet air temperature (T1) [C] |
+| X10 | GT Compressor outlet air temperature (T2) [C] |
+| X11 | HP Turbine exit pressure (P48) [bar] |
+| X12 | GT Compressor inlet air pressure (P1) [bar] |
+| X13 | GT Compressor outlet air pressure (P2) [bar] |
+| X14 | Gas Turbine exhaust gas pressure (Pexh) [bar] |
+| X15 | Turbine Injecton Control (TIC) [%] |
+| X16 | Fuel flow (mf) [kg/s] |
+| Y1 | GT Compressor decay state coefficient |
+| Y2 | GT Turbine decay state coefficient |
+
+
+The data is from a simulator of a naval vessel, characterized by a Gas Turbine (GT) propulsion plant. You may treat the available data as if it is from a hypothetical naval vessel. The propulsion system behaviour has been described with the parameters `X1` to `X16`, as detailed above, and the target is to predict the performance decay of the GT components such as *GT Compressor* and *GT Turbine*. 
+
+**Task** : Build the best possible Linear Model you can to predict both `Y1` and `Y2`, using the training dataset `assign1_NavalData.csv`. Then predict `Y1` and `Y2` values using your model on the test dataset `assign1_NavalPred.csv`.
+
+---
+
+### Exploratory Data Analysis
+
+First, gather the summary of all the variables in the given dataset and draw inferences from it.
+```{r}
+summary(navalData)
+```
+Statistical measures of each dimension providing a spread of the data among the 10,000 rows is returned that can help detect outliers and make relevant conclusions about the dataset.
+
+**Data Visualisation**
+
+Constructing histograms can help identify the distribution of the variables better.
+```{r}
+# Array for color codes
+colnames(navalData)[3]
+colorCode <- c("orange","blue","red","purple","green","cyan")
+# Run a loop for histogram creation
+for(i in seq(0,17)){
+  hist(navalData[[i+1]], col = colorCode[i%%6 + 1], main = paste("Histogram of feature",i+1, sep=" ", collapse = NULL), xlab=colnames(navalData)[i+1])
+}
+```
+
+The distributions are different for different features. Most important observation is that `X9` and `X12` are *fixed* throughout the dataset. There are a few features like `X8` and `X16` which have a few outliers.
+
+The next visualization tool is Boxplot.
+```{r}
+# Run a loop for boxplot creation 
+for(i in seq(0,17)){
+  boxplot(navalData[[i+1]], horizontal = TRUE, col = colorCode[i%%6 + 1], main = paste("Boxplot of feature",i+1, sep=" ", collapse = NULL), xlab = colnames(navalData)[i+1])
+}
+```
+
+Most features are normal distribution with a few exceptions being positively (`X15` and `X16`) and negatively skewed (`X5` and `Y2`)
+We can remove `X9` and `X12`, i.e. *GT Compressor inlet air temperature (T1)* and *GT Compressor inlet air pressure (P1)* respectively since they are externally controlled and have the same values for all data rows. `X6` (Starboard Propeller Torque (Ts) [kN])
+and `X7` (Port Propeller Torque (Tp) [kN]) have the same values and are **redundant** for model building. We can drop one of them and keep the other one.
+```{r}
+# Dropping columns X6, X9 and X12
+navalDataFiltered = subset(navalData,select = -c(X6,X9,X12))
+```
+
+To perform in-depth analysis of interdependence between the features and the outputs, we need to find out the correlation between them.
+```{r}
+# Find correlation between variables and colormap
+cor(navalDataFiltered)
+library(corrplot)
+corrplot.mixed(cor(navalDataFiltered), lower.col="blue")
+```
+
+The features are highly interdependent with strong correlation values (most > 0.8). The output values have minor but approximately similar dependence on all the input features. The high correlation for features like `X11` with most of the other features makes it comparatively less relevant in predicting output values. 
+
+---
+
+### Model Building
+
+The first step for building the model is splitting the data into train and test (using 80:20).
+```{r}
+set.seed(1)
+# Split the data into 80:20 (train:test)
+row.number <- sample(1:nrow(navalDataFiltered),0.8*nrow(navalDataFiltered))
+train = navalDataFiltered[row.number,] # Init train
+test  = navalDataFiltered[-row.number,] # Init test
+```
+
+The model built can be trained by Linear regression and other methods. Let us first examine the original dataset and train it and find out the accuracy of the model. **Adjusted R-squared** can be used to determine the performance of a model. 
+```{r}
+# First linear model for Y1
+lmFit1Y1 <- lm(Y1 ~ .,data = train[,-15])
+summary(lmFit1Y1)
+```
+The Adjusted R-squared value is a good metric to measure performance of the model. The value is *0.8393* and the least significant feature/input for prediction of `Y1` is `X4`, as we can see it has the highest value of Probability (Pr). We can update the linear model by removing `X4`.
+```{r}
+lmFit2Y1 <- update(lmFit1Y1, ~ . - X4, data = train[,-15]) # Update model by removing X4
+summary(lmFit2Y1)
+```
+The adjusted R square value stayed the same, which means there was no degradation in the performance. We have covered the linearity part and kept variables with significantly low values of Probability (Pr).
+
+**Non-linearity**
+
+Now, to check the non-linearity behaviour of the model, we use the package ggfortify to plot diagnostic plots. 
+```{r}
+library(ggfortify)
+autoplot(lmFit2Y1) # Plot diagnostic plots
+```
+
+The first plot gives us a good idea about the linearity of the values. 
+```{r}
+plot(lmFit2Y1, 1)
+```
+
+In an ideal case, the red line in the center would be overlapping the horizontal dashed line. The model has average linear performance as the red line is approximately fitted with the dashed line. In order to improve the linearity, one can understand relationships between the independent and the dependent variables and interpret the non linearity better.
+
+We can plot the variables against Y1 for the given dataset.
+
+```{r}
+plot(train[["X1"]],train[["Y1"]],pch=1,col="red")
+plot(train[["X2"]],train[["Y1"]],pch=1,col="blue")
+plot(train[["X3"]],train[["Y1"]],pch=1,col="orange")
+plot(train[["X5"]],train[["Y1"]],pch=1,col="yellow")
+plot(train[["X7"]],train[["Y1"]],pch=1,col="cyan")
+plot(train[["X8"]],train[["Y1"]],pch=1,col="green")
+plot(train[["X10"]],train[["Y1"]],pch=1,col="red")
+plot(train[["X11"]],train[["Y1"]],pch=1,col="blue")
+plot(train[["X13"]],train[["Y1"]],pch=1,col="orange")
+plot(train[["X14"]],train[["Y1"]],pch=1,col="yellow")
+plot(train[["X15"]],train[["Y1"]],pch=1,col="cyan")
+plot(train[["X16"]],train[["Y1"]],pch=1,col="green")
+```
+
+As we can see, a few variables have non linear relationship with Y1. In order to improve performance we can add independent variables like *sqrt(`X3`)*.
+```{r}
+lmFit3Y1 <- update(lmFit2Y1, ~ . +I(sqrt(X3)), data=train[,-15])
+summary(lmFit3Y1)
+```
+As expected, adding another variable `sqrt(X3)` improved the adjusted R square value to *0.8452* from *0.8393*. This also increased the probability of `X8`. Getting rid of `X8` gives us the following final Model.
+```{r}
+lmFit4Y1 <- update(lmFit3Y1, ~ . -X8, data = train[,-15]) # Update modified model by removing X8
+summary(lmFit4Y1)
+```
+The adjusted R squared value is *0.8452*.
+
+**Outlier Detection**
+
+Now, we can check the outliers using another diagnostic plot that measures **Cook's distance**. We can also use Residuals v/s Leverage to judge the influential points/outliers.
+```{r}
+plot(lmFit4Y1, 4, id.n=5) # Plotting Cook's Distance for better understanding
+```
+
+The 5 outliers are labelled with their observtion number in the graph above. All the observations with Cook distance greater than 4/(n - p -1) where n is the number of observations and p is the number of input features should be eliminated to take care of the outliers.
+```{r}
+cd <- cooks.distance(lmFit4Y1)
+train.clean <- train[abs(cd)<4/(nrow(train)-1),]
+# Eliminate the outliers
+lmFinalFitY1 <- lm(formula(lmFit4Y1), data = train.clean[,-15])
+summary(lmFinalFitY1)
+```
+As we can see, the removal of outliers has improved the adjusted R squared value to *0.8726* from *0.8452*. This model can be percieved as the Best Fit. The corresponding Mean Square Error can be calculated,
+```{r}
+mse_lmY1 <- mean(test[["Y1"]] - predict(lmFinalFitY1, test))^2
+mse_lmY1
+```
+Approaching the linear modelling for `Y2` in a similar manner, we first find the adjusted R squared value from the subset of variables.
+```{r}
+lmFit1Y2 <- lm(Y2 ~ ., data = train[,-14])
+summary(lmFit1Y2)
+```
+The adjusted R square value is *0.786*. The variavle with the highest probability for `Y2` is `X2`. We shall remove `X2` and perform modelling again.
+```{r}
+lmFit2Y2 <- update(lmFit1Y2, ~ . - X2, data = train[,-14]) # Update model by removing X2
+summary(lmFit2Y2)
+```
+The adjusted R squared remains the same with lesser features, which is optimal. Now, understanding the Residual v/s Fitted values plot can help us understand the linearity assumption of the model.
+
+**nearity**
+```{r}
+autoplot(lmFit2Y2)
+plot(lmFit2Y2, 1)
+```
+
+The given plot shows that the linearity assumption is accurate as the red line is behaving as expected and not showing much difference from the dashed line. In order to understand this better, we plot the input variables against `Y2` and try to establish any new relationship between them.
+```{r}
+plot(train[["X1"]],train[["Y2"]],pch=1,col="red")
+plot(train[["X3"]],train[["Y2"]],pch=1,col="blue")
+plot(train[["X4"]],train[["Y2"]],pch=1,col="orange")
+plot(train[["X5"]],train[["Y2"]],pch=1,col="yellow")
+plot(train[["X7"]],train[["Y2"]],pch=1,col="cyan")
+plot(train[["X8"]],train[["Y2"]],pch=1,col="green")
+plot(train[["X10"]],train[["Y2"]],pch=1,col="red")
+plot(train[["X11"]],train[["Y2"]],pch=1,col="blue")
+plot(train[["X13"]],train[["Y2"]],pch=1,col="orange")
+plot(train[["X14"]],train[["Y2"]],pch=1,col="yellow")
+plot(train[["X15"]],train[["Y2"]],pch=1,col="cyan")
+plot(train[["X16"]],train[["Y2"]],pch=1,col="green")
+
+```
+
+As we can see, a few variables have non linear relationship with `Y2`. In order to improve performance we can add independent variables like *sqrt(X15)*.
+```{r}
+lmFit3Y2 <- update(lmFit2Y2, ~ . +I(sqrt(X15)), data=train[,-14])
+summary(lmFit3Y2)
+```
+As expected, the adjusted R squared value increased to *0.7934* from *0.786* by adding a new feature. Since the probability is significantly low for all the features, we go ahead and detect outliers and remove them and clean the data.
+
+**Outlier Detection**
+```{r}
+autoplot(lmFit3Y2)
+plot(lmFit3Y2, 4, id.n=5)
+```
+
+The 5 outliers are labelled with their observtion number in the graph above. All the observations with Cook distance greater than 4/(n - p -1) where n is the number of observations and p is the number of input features should be elminated to take care of the outliers.
+```{r}
+cd <- cooks.distance(lmFit3Y2)
+train.clean <- train[abs(cd)<4/(nrow(train)-1),]
+lmFinalFitY2 <- lm(formula(lmFit3Y2), data = train.clean[,-14])
+summary(lmFinalFitY2)
+
+```
+The adjusted R squared value increased to *0.8267* from *0.7934* upon removal of outliers. The mean square error can be calculated as well.
+```{r}
+mse_lmY2 <- mean(test[["Y2"]] - predict(lmFinalFitY2, test))^2
+mse_lmY2
+```
+
+---
+
+### Prediction of Y1 and Y2
+In order to perform prediction, we can use the split between train and test and conduct a few regression techniques to se which has the best performance. We will be using the following regressions and comparing between them:
+1. Linear Regression
+2. Random Forest Regressor
+3. k-Nearest Neighbour Regressor
+4. Extra Trees Regressor
+
+Linear regression has been performed.
+
+**Random Forest Regressor**
+```{r}
+library(randomForest)
+library(miscTools)
+randomForestY1 <- randomForest(Y1 ~ ., data = train[,-15], importance = TRUE)
+randomForestY2 <- randomForest(Y2 ~ ., data = train[,-14], importance = TRUE)
+#summary(randomForestY1)
+#summary(randomForestY2)
+
+#Calculating the R squared and Mean Square Error using Random Forest Regressor.
+
+r2_rf_Y1 <- rSquared(test[["Y1"]], test[["Y1"]] - predict (randomForestY1, test))
+r2_rf_Y2 <- rSquared(test[["Y2"]], test[["Y2"]] - predict (randomForestY2, test))
+mse_rf_Y1 <- mean(test[["Y1"]] - predict(randomForestY1, test))^2
+mse_rf_Y2 <- mean(test[["Y2"]] - predict(randomForestY2, test))^2
+r2_rf_Y1
+r2_rf_Y2
+mse_rf_Y1
+mse_rf_Y2
+```
+**KNN Regressor**
+```{r}
+library(FNN)
+knnY1 <- knn.reg(train = train[,-14:-15], test = test[,-14:-15], y = train[["Y1"]])
+knnY2 <- knn.reg(train = train[,-14:-15], test = test[,-14:-15], y = train[["Y2"]])
+
+#Calculating the mean square error and R squared value from the knn model.
+
+mse_knn_Y1 <- mean(test[["Y1"]] - knnY1$pred)^2
+mse_knn_Y2 <- mean(test[["Y2"]] - knnY2$pred)^2
+r2_knn_Y1 <- rSquared(test[["Y1"]], test[["Y1"]] - knnY1$pred)
+r2_knn_Y2 <- rSquared(test[["Y2"]], test[["Y2"]] - knnY2$pred)
+mse_knn_Y1
+mse_knn_Y2
+r2_knn_Y1
+r2_knn_Y2
+```
+**Extra Trees Regressor**
+```{r}
+library(extraTrees)
+extraTreesY1 <- extraTrees(train[,-14:-15], train[["Y1"]])
+extraTreesY2 <- extraTrees(train[,-14:-15], train[["Y2"]])
+
+#Calculating the mean square error and R squared for extra trees regressor
+
+Y1pred <- predict(extraTreesY1, test[,-14:-15])
+Y2pred <- predict(extraTreesY2, test[,-14:-15])
+mse_et_Y1 <- mean(test[["Y1"]]-Y1pred)^2
+mse_et_Y2 <- mean(test[["Y2"]]-Y2pred)^2
+mse_et_Y1
+mse_et_Y2
+r2_et_Y1 <- rSquared(test[["Y1"]], test[["Y1"]]- Y1pred)
+r2_et_Y2 <- rSquared(test[["Y2"]], test[["Y2"]]- Y2pred)
+r2_et_Y1
+r2_et_Y2
+```
+As we can see, comparing the R squared and MSE for different regressor gives the following results.
+
+|Variable|     Method     |      MSE     |R-squared|
+|--------|----------------|--------------|---------|
+|  Y1    |       lm       | 1.349176e-08 | 0.8726  |
+|  Y1    |  Random Forest | 1.227293e-08 | 0.9708  |
+|  Y1    |  KNN Regressor | 4.987778e-08 | 0.9220  |
+|  Y1    |   Extra Trees  | 1.404324e-08 | 0.9747  |
+|  Y2    |       lm       | 3.509762e-10 | 0.8267  |
+|  Y2    |  Random Forest | 2.588283e-09 | 0.9482  |
+|  Y2    |  KNN Regressor | 2.669444e-09 | 0.8430  |
+|  Y2    |   Extra Trees  | 2.922934e-09 | 0.9536  |
+   
+The performance for `Y1` is best using **Random Forest** or **Extra Trees** regressor and for `Y2` it is using **Linear Modelling** or **Extra Trees**.
+
+Loading the dataset to predict values and using the final models for prediction.
+```{r}
+navalDataPred <- read.csv("assign1_NavalPred.csv", header = TRUE)
+#str(navalDataPred)
+#dim(navalDataPred)
+
+# Preparing the data for Y1 and Y2 (removing X6, X9 and X12)
+
+navalDataPredFiltered = subset(navalDataPred,select = -c(X6,X9,X12))
+#print(navalDataPredFiltered)
+
+# Preparing for Y1 and Y2 respectively.
+
+navalDataPredY1 = subset(navalDataPredFiltered, select = -c(X4,X8))
+navalDataPredY2 = subset(navalDataPredFiltered, select = -c(X2))
+
+# Predict using lm
+
+lmY1Pred = predict(lmFinalFitY1,navalDataPredY1)
+lmY2Pred = predict(lmFinalFitY2,navalDataPredY2)
+
+# Value of coefficient cannot be > 1
+for(x in seq(1,1000)){
+  if(lmY1Pred[x]>1){
+    lmY1Pred[x] = 1
+  }
+  if(lmY2Pred[x]>1){
+    lmY2Pred[x] = 1
+  }
+}
+
+# Store and save predictions in .csv 
+lmyPredFrame <- data.frame("Y1"=lmY1Pred, "Y2"=lmY2Pred)
+str(lmyPredFrame)
+write.csv(lmyPredFrame, "assign1_NavalPred_LM.csv", row.names = TRUE)
+
+# Predicting using Random Forest
+rfY1Pred = predict (randomForestY1, navalDataFiltered)
+rfY2Pred = predict (randomForestY2, navalDataFiltered)
+
+# Value of coefficient cannot be > 1
+for(x in seq(1,1000)){
+  if(rfY1Pred[x]>1){
+    rfY1Pred[x] = 1
+  }
+  if(rfY2Pred[x]>1){
+    rfY2Pred[x] = 1
+  }
+}
+
+# Store and save predictions in .csv 
+rfPredFrame <- data.frame("Y1"=rfY1Pred, "Y2"=rfY2Pred)
+write.csv(rfPredFrame, "assign1_NavalPred_RF.csv", row.names = TRUE)
+
+# Predicting using KNN regressor
+
+knnY1 <- knn.reg(train = train[,-14:-15], test = navalDataPredFiltered, y = train[["Y1"]])
+knnY2 <- knn.reg(train = train[,-14:-15], test = navalDataPredFiltered, y = train[["Y2"]])
+knnY1Pred = knnY1$pred
+knnY2Pred = knnY2$pred
+
+# Value of coefficient cannot be > 1
+for(x in seq(1,1000)){
+  if(knnY1Pred[x]>1){
+    knnY1Pred[x] = 1
+  }
+  if(knnY2Pred[x]>1){
+    knnY2Pred[x] = 1
+  }
+}
+
+# Store and save predictions in .csv 
+knnPredFrame <- data.frame("Y1"=knnY1Pred, "Y2"=knnY2Pred)
+write.csv(knnPredFrame, "assign1_NavalPred_KNN.csv", row.names = TRUE)
+
+# Predicting using Extra Trees Regressor
+
+etY1Pred = predict(extraTreesY1, navalDataPredFiltered)
+etY2Pred = predict(extraTreesY2, navalDataPredFiltered)
+
+# Value of coefficient cannot be > 1
+for(x in seq(1,1000)){
+  if(etY1Pred[x]>1){
+    etY1Pred[x] = 1
+  }
+  if(etY2Pred[x]>1){
+    etY2Pred[x] = 1
+  }
+}
+
+# Store and save predictions in .csv 
+etPredFrame <- data.frame("Y1"=etY1Pred, "Y2"=etY2Pred)
+write.csv(etPredFrame, "assign1_NavalPred_ET.csv", row.names = TRUE)
+```

@@ -1,0 +1,341 @@
+---
+title: "Cx4073 : Assignment 1"
+author: "Shantanu Sharma"
+date: "U1622895F"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+### Analysis of Naval Propulsion Data
+
+Import the CSV data file `assign1_NavalData.csv` for analysis, and quickly check the structure of the data.
+
+```{r}
+navalData <- read.csv("assign1_NavalData.csv", header = TRUE)
+str(navalData)
+```
+
+The following table summarizes the features/variables in the dataset. You will also find them in the text file `assign1_FeatureNames.txt`. The features/variables `X1` to `X16` are the predictors, while `Y1` and `Y2` are the *target* response variables.
+
+| Variable | Description |
+| -------- | ----------- |
+| X1 | Lever position (lp) |
+| X2 | Ship speed (v) [knots] |
+| X3 | Gas Turbine shaft torque (GTT) [kN m] |
+| X4 | Gas Turbine rate of revolutions (GTn) [rpm] |
+| X5 | Gas Generator rate of revolutions (GGn) [rpm] |
+| X6 | Starboard Propeller Torque (Ts) [kN] |
+| X7 | Port Propeller Torque (Tp) [kN] |
+| X8 | HP Turbine exit temperature (T48) [C] |
+| X9 | GT Compressor inlet air temperature (T1) [C] |
+| X10 | GT Compressor outlet air temperature (T2) [C] |
+| X11 | HP Turbine exit pressure (P48) [bar] |
+| X12 | GT Compressor inlet air pressure (P1) [bar] |
+| X13 | GT Compressor outlet air pressure (P2) [bar] |
+| X14 | Gas Turbine exhaust gas pressure (Pexh) [bar] |
+| X15 | Turbine Injecton Control (TIC) [%] |
+| X16 | Fuel flow (mf) [kg/s] |
+| Y1 | GT Compressor decay state coefficient |
+| Y2 | GT Turbine decay state coefficient |
+
+
+The data is from a simulator of a naval vessel, characterized by a Gas Turbine (GT) propulsion plant. You may treat the available data as if it is from a hypothetical naval vessel. The propulsion system behaviour has been described with the parameters `X1` to `X16`, as detailed above, and the target is to predict the performance decay of the GT components such as *GT Compressor* and *GT Turbine*. 
+
+**Task** : Build the best possible Linear Model you can to predict both `Y1` and `Y2`, using the training dataset `assign1_NavalData.csv`. Then predict `Y1` and `Y2` values using your model on the test dataset `assign1_NavalPred.csv`.
+
+---
+
+# Part 1- Analysis
+
+## Aim 1: 
+Basic analysis of the dataset
+```{r}
+dim(navalData)
+names(navalData)
+str(navalData)
+head(navalData)
+tail(navalData)
+```
+### Observation 1:
+10,000 data points and 18 variables in the given dataset with X2, X9, X12 being integer values
+
+## Aim 2: 
+Generate summary of variables is first generated to have a vague idea about the distribution of variables individually.
+```{r}
+summary(navalData)
+```
+### Observation 2: 
+`X9` and `X12` have constant value throughout (1 and 12 respectively). `X14` has almost constant value throughout which needs to be explored further using frequency histogram.
+
+## Aim 3: 
+Generate frequency histogram for variables
+
+
+```{r}
+colnames(navalData)[3]
+colorsInR <- c("red","yellow","purple","green","cyan","orange","black")
+
+# histogram plots for X
+  for ( i in seq(1,16) ){
+    hist(navalData[[i]], breaks=20, main= paste("Frequency distribution of X",i,sep=""), col=colorsInR[i%%7+1], xlab= paste("X",i,sep=""))
+  }
+
+#histogram plot for Y
+for ( i in seq(1,2) ){
+    hist(navalData[[i+16]], breaks=20, main= paste("Frequency distribution of Y",i,sep=""), col=colorsInR[i%%7+1], xlab= paste("Y",i,sep=""))
+  }
+```
+### Observation 3:
+The data distribution is sparse for some variables like `X4` and `X5`. `X7`, `X11`, `X16`, and `X6` have visible outliers which should be explored via boxplots
+
+## Aim 4:
+Generate boxplots for variables
+```{r}
+
+# boxplots for Xs
+  for ( i in seq(1,16) ){
+    boxplot(navalData[[i]], horizontal= TRUE, main= paste("Frequency distribution of X",i,sep=""), col=colorsInR[i%%7+1], xlab= paste("X",i,sep=""))
+  }
+
+#histogram plot for Ys
+for ( i in seq(1,2) ){
+    boxplot(navalData[[i+16]], horizontal= TRUE, main= paste("Frequency distribution of Y",i,sep=""), col=colorsInR[i%%7+1], xlab= paste("Y",i,sep=""))
+  }
+
+```
+
+### Observation 4:
+Data distribution of some variables is highly concentrated/ approximately skewed Gaussian (example `X16`). We can remove the constant variables that is `X9` and `X12` from our data observations as they do not contribute to any change in output variables `Y1` and `Y2`.
+
+
+
+## Aim 5:
+Generate correlation between variables
+```{r}
+navalDataRefined1 <- navalData[-c(9,12)]
+
+  cor(navalDataRefined1)
+  library(GGally)
+  ggcorr(navalDataRefined1, geom="tile")
+  # Plotting two-dimensional scatterplots of all pairs of variables
+  pairs(navalDataRefined1, pch = 19, col = "orange")
+
+```
+  
+### Observation 5:
+We can observe from correlation plot and correlation values that all the input values are highly correlated to each other and `X6` and `X7` have a correlation equal to **1**. Hence, we can remove one of the variable for analyzing the effect on output of input variables on output variables `Y1` and `Y2`. {Reasoning- Starboard and port side torque shoule be same for the ship to propel forward in a straight line}. The output variables `Y1` and `Y2` have almost no corelation.
+
+
+
+
+#------------------------------------------------------------------------------------------------
+
+# Part 2: Linear Model
+
+```{r}
+#adjusting data and initializing training data and test data for the linear model to be built
+navalDataRefined2 <- navalData[-c(9,12,7)]
+set.seed(1)
+row.number <- sample(1:nrow(navalDataRefined2),0.8*nrow(navalDataRefined2))
+trainData = navalDataRefined2[row.number,]
+testData  = navalDataRefined2[-row.number,]
+```
+
+## Aim 6:
+Create linear model for Y1 and use Adjusted R-squared as the metric to determine if the model is improving. (Multiple R-squared doesn't properly reflect removal of insignificant variable)
+```{r}
+lmFitY1_Attempt1 <- lm(Y1 ~ .,data = trainData[,-15])
+summary(lmFitY1_Attempt1)
+
+#step(lmFitY1_Attempt1, direction = "backward")
+
+```
+
+### Observation 6: 
+`X4` has an observably high p-value and can be an insignificant contribution for predicting `Y1`
+
+## Aim 7: 
+Create linear model for Y1 and find affect on model prediction of Y1
+```{r}
+lmFitY1_Attempt2 <- update(lmFitY1_Attempt1, ~ . - X4, data = trainData[,-15])
+summary(lmFitY1_Attempt2)
+```
+
+### Observation 7:
+Change in Adjusted R-squared value is 0.0000 (value remians 0.8394) and hence removal of `X4` doesn't detoriate the model fitting.
+
+## Aim 8: 
+Removal/Treatment of outliers for better linear model prediction of `Y1`
+```{r}
+# For univariate and bivariate model, outlier can be detected and treated using boxplots. For multi-variate model we use Cook's distance
+cooksd <- cooks.distance(lmFitY1_Attempt2)
+plot(cooksd, pch="*", cex=2, main="Influential Observations")  # plot cook's distance
+abline(h = abs(4/(nrow(trainData)-1)), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>abs(4/(nrow(trainData)-1)),names(cooksd),""), col="red")  # add labels
+
+
+# Observations with Cook distance greater than 4/(n - p -1) where n is the number of observations and p is the number of input features should be eliminated to take care of the outliers
+
+navalDataRefined3 <- trainData[abs(cooksd)<4/(nrow(trainData)-1),]
+lmFitY1_Attempt3 <- lm(formula(lmFitY1_Attempt2), data = navalDataRefined3[,-15])
+summary(lmFitY1_Attempt3)
+```
+
+### Observation 8:
+There is an increase in Adjusted R-squared value from 0.8394 to 0.8713 implying the improvement of linear model. There is also a high p-value after removal of outlier: `X3`. It's impact on removal needs to be tested.
+
+## Aim 9: 
+To test impact of removal of `X3` from the input variables for output `Y1`
+```{r}
+lmFitY1_Attempt4 <- update(lmFitY1_Attempt3, ~ . - X3, data = train[,-15])
+summary(lmFitY1_Attempt4)
+```
+
+### Observation 9: 
+Removal of X3 from linear model resulted in degradation of the model and hence X3 should be counted in the estimation of Y1. Model lmFitY1_Attempt3 can be considered Best Fit linear model and hence we can calculate Mean Squared Error value
+```{r}
+mse_lmY1 <- mean(testData[["Y1"]] - predict(lmFitY1_Attempt3, testData))^2
+mse_lmY1
+```
+
+## Aim 10: 
+Generate best fitting model for `Y2`
+```{r}
+lmFitY2_Attempt1 <- lm(Y2 ~ .,data = trainData[,-14])
+summary(lmFitY2_Attempt1)
+```
+
+### Observation 10: 
+`X2` has the highest t-statistics and hence it's removal from the linear model needs to be checked
+
+## Aim 11:
+Study the effect of removal of `X2` from linear model of Y2
+```{r}
+lmFitY2_Attempt2 <- update(lmFitY2_Attempt1, ~ . - X2, data = train[,-14])
+summary(lmFitY2_Attempt2)
+```
+
+### Observation 11: 
+There is marginal difference (of 0.0001) in Adjusted R-squared value after removal of input variable `X2` which is desirable. Hence, removal of X2 won't impact the model prediction and X2 is "extra".
+
+## Aim 12:
+Removal/Treatment of outliers for better linear model prediction of `Y2`
+```{r}
+# For univariate and bivariate model, outlier can be detected and treated using boxplots. For multi-variate model we use Cook's distance
+cooksd <- cooks.distance(lmFitY2_Attempt2)
+plot(cooksd, pch="*", cex=2, main="Influential Observations")  # plot cook's distance
+abline(h = abs(4/(nrow(trainData)-1)), col="red")  # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>abs(4/(nrow(trainData)-1)),names(cooksd),""), col="red")  # add labels
+
+
+# Observations with Cook distance greater than 4/(n - p -1) where n is the number of observations and p is the number of input features should be eliminated to take care of the outliers
+
+navalDataRefined3 <- trainData[abs(cooksd)<4/(nrow(trainData)-1),]
+lmFitY2_Attempt3 <- lm(formula(lmFitY2_Attempt2), data = navalDataRefined3[,-14])
+summary(lmFitY2_Attempt3)
+```
+
+### Observation 12:
+Removal of outliers increase the Adjusted R-squared value of the new model from 0.7868 to 0.8247. This can be considered the Best Fit linear model for `Y2` and hence we can calculate the Mean Squared Errors value:
+```{r}
+mse_lmY2 <- mean(testData[["Y2"]] - predict(lmFitY2_Attempt3, testData))^2
+mse_lmY2
+```
+
+#------------------------------------------------------------------------------------------------
+
+# Part 3- Prediction of Y1 and Y2
+
+## Aim 13: Generate predicted values of Y1 and Y2 on given dataset
+```{r}
+navalDataPred <- read.csv("assign1_NavalPred.csv", header = TRUE)
+navalDataPredFiltered = subset(navalDataPred,select = -c(X7,X9,X12))
+
+
+# Y1 fitting has removal of X4, X7, X9, X12
+# Y2 fitting has removal of X2, X7, X9, X12
+navalDataPredY1 = subset(navalDataPredFiltered, select = -c(X4))
+navalDataPredY2 = subset(navalDataPredFiltered, select = -c(X2))
+
+# Predict using lm
+
+lmY1Pred = predict(lmFitY1_Attempt3,navalDataPredY1)
+lmY2Pred = predict(lmFitY2_Attempt3,navalDataPredY2)
+
+# Value of coefficient cannot be > 1
+for(x in seq(1,1000)){
+  if(lmY1Pred[x]>1){
+    lmY1Pred[x] = 1
+  }
+  if(lmY2Pred[x]>1){
+    lmY2Pred[x] = 1
+  }
+}
+
+# Store and save predictions in .csv 
+lmYPredDataFrame <- data.frame("Y1"=lmY1Pred, "Y2"=lmY2Pred)
+str(lmYPredDataFrame)
+write.csv(lmYPredDataFrame, "assign1_NavalPred_LM.csv", row.names = TRUE)
+```
+
+## Aim 14: 
+Try fitting using non-linear models such as Random Forest and KNN Regressor. 
+```{r}
+library(randomForest)
+library(miscTools)
+
+# Random Forest
+randomForestY1 <- randomForest(Y1 ~ ., data = trainData[,-15], importance = TRUE)
+randomForestY2 <- randomForest(Y2 ~ ., data = trainData[,-14], importance = TRUE)
+#summary(randomForestY1)
+#summary(randomForestY2)
+
+#Calculating the R-squared and MSE using Random Forest Regressor.
+
+r2_rf_Y1 <- rSquared(testData[["Y1"]], testData[["Y1"]] - predict (randomForestY1, testData))
+r2_rf_Y2 <- rSquared(test[["Y2"]], testData[["Y2"]] - predict (randomForestY2, testData))
+mse_rf_Y1 <- mean(testData[["Y1"]] - predict(randomForestY1, testData))^2
+mse_rf_Y2 <- mean(testData[["Y2"]] - predict(randomForestY2, testData))^2
+r2_rf_Y1
+r2_rf_Y2
+mse_rf_Y1
+mse_rf_Y2
+```
+```{r}
+library(FNN)
+knnY1 <- knn.reg(train = trainData[,-14:-15], test = testData[,-14:-15], y = trainData[["Y1"]])
+knnY2 <- knn.reg(train = trainData[,-14:-15], test = testData[,-14:-15], y = trainData[["Y2"]])
+
+#Calculating the R-squared and MSE value from the knn model.
+
+mse_knn_Y1 <- mean(testData[["Y1"]] - knnY1$pred)^2
+mse_knn_Y2 <- mean(testData[["Y2"]] - knnY2$pred)^2
+r2_knn_Y1 <- rSquared(testData[["Y1"]], testData[["Y1"]] - knnY1$pred)
+r2_knn_Y2 <- rSquared(testData[["Y2"]], testData[["Y2"]] - knnY2$pred)
+mse_knn_Y1
+mse_knn_Y2
+r2_knn_Y1
+r2_knn_Y2
+```
+
+| Variable | Fitting Method | R-squared | MSE |
+| -------- | -------------- | --------- | --- |
+| Y1 | Linear Model | 0.8713 |  4.325837e-08
+| Y1 | Random Forest | 0.9697724 |  4.27864e-09
+| Y1 | KNN | 0.9112322 | 1.137778e-08
+| Y2 | Linear Model | 0.8247 | 1.629803e-08
+| Y2 | Random Forest | 0.9489247 | 3.544658e-15
+| Y2 | KNN | 0.8200369 | 8.402778e-09
+
+### Observation 14:
+For predicting Y1- Random forest is best among the observed linear and non-linear models.
+For predicting Y2- Random forest is best among the observed linear and non-linear models.
