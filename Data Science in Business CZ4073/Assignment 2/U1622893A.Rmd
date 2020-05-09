@@ -1,0 +1,494 @@
+---
+title: 'Cx4073 : Assignment 2'
+author: "Chiripal Vansh Jaiprakash"
+date: "U1622893A"
+output:
+  html_document:
+    highlight: tango
+    theme: paper
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+### Targeted Marketing for Car Insurance
+
+Suppose you the Data Scientist in a small Car Insurance company, and you want to judge if the Customers will accept or reject a new Insurance product that the company is going to launch. Your company did a pilot with 9000 customers and obtained the corresponding dataset. The classification goal is to learn from this pilot, and predict if a targeted customer will respond *Yes* to the offer. Your company also wants to identify the top three variables that may affect the response of the customers, and they also want to know how to increase the chances for the customers to respond *Yes* to the offered Insurance product.
+
+---
+
+### Analysis of Marketing Data
+
+Import the CSV data file `assign2_MarketData.csv` for analysis, and quickly check the structure of the data.
+
+```{r}
+install.packages("DMwR", repos = "https://cran.asia/")
+install.packages("tree", repos = "https://cran.asia/")
+install.packages("rpart", repos = "https://cran.asia/")
+install.packages("rpart.plot", repos = "https://cran.asia/")
+install.packages("randomForest", repos = "https://cran.asia/") 
+install.packages("Boruta", repos = "https://cran.asia/")
+
+marketData <- read.csv("assign2_MarketData.csv", header = TRUE)
+str(marketData)
+```
+
+The goal is to predict the response variable `Response` for each person -- that is, whether a person would accept the new *Insurance Product* being offered by your company. Before doing that, tag the variables under **Demographic Profile** or **Insurance Profile** of the customers, as per our understanding. 
+
+The variables can be listed as follows:
+
+
+| Variable | Profile |
+| -------- | ----------- |
+| Customer | None |
+| State | Demographic|
+|Customer.Lifetime.Value|Insurance|
+|Coverage|Insurance|
+|Education|Demographic|
+|Effective.To.Date|None|
+|EmploymentStatus|Demographic
+|Gender|Demographic|
+|Income|Insurance|
+|Location.Code|Demographic|
+|Marital.Status| Demographic|
+|Monthly.Premium.Auto |Insurance|
+|Months.Since.Last.Claim| Insurance|
+|Months.Since.Policy.Inception| Insurance|
+|Number.of.Open.Complaints| Insurance|
+|Number.of.Policies| Insurance|
+|Policy.Type| Insurance|
+|Policy| Insurance|
+|Renew.Offer.Type |Insurance|
+|Sales.Channel| Insurance|
+|Total.Claim.Account| Insurance|
+|Vehicle.Class |Demographic|
+|Vehicle.Size |Demographic|
+
+`Customer`, which appears to be like the primary key is irrelevant for our output variable. `Effective.to.Date` is also widely spread and does not hold any meaningful information.
+Most of the variables that have been classified as *Demographic* represent information relevant to the people and their surroundings. Culture and society can be a deteminant of most of these variables thereby being defined as Demographic. For example, the `State`, `Location.Code`, `Gender`, `Marital Status`, etc. are all personal information that do no add any definitive value to understanding the insurance aspect of any individual. Simliarly, variables that have been defined as *Insurance Policy* are the ones which involve factors that appear to be relevant while taking decisions pertaining to someone's insurance. These involve `Income`, `Number.of.Policies`, etc.
+
+
+---
+
+#### Problem 1
+
+Build an optimal tree-based classification model for `Response` vs just the **Insurance Profile** of a customer. Check the relevant accuracy parameters of your model, and use it to predict `Response` in the `assign2_MarketPred.csv`. 
+
+* Identify the *top three* important variables in this case. 
+* Why are they important? Justify in terms of the Pilot data.
+* How would you influence `Response` using these variables?
+
+#### Answer 1
+
+**Exploratory Data Analaysis**
+
+Problem 1 entails discussion about Insurance Profile of the customer. First step involves selecting the subset of variables that fall under this category. 
+
+```{r}
+insuranceMarketData <- subset(marketData, select = -c(Customer, State, Education, Effective.To.Date, EmploymentStatus, Gender, Location.Code, Marital.Status, Vehicle.Class, Vehicle.Size, Number.of.Open.Complaints))
+dim(insuranceMarketData)
+names(insuranceMarketData)
+str(insuranceMarketData)
+
+```
+
+**Data Pre-Processing**
+The first step involves cleaning the data. The data consists of 9,000 rows and there are no missing values. The next step is making sure the data types are consistent for all the columns. Since there are a few values like `Number.of.Policies` which are *integer* but should be *categorical* instead.
+
+```{r}
+insuranceMarketData$Number.of.Policies <- as.factor(insuranceMarketData$Number.of.Policies)
+```
+
+After filtering the data and changing data type as and when necessary, we plot the `Response` variable to understand it's distribution.
+
+```{r}
+cols <- c("red","green")
+plot(insuranceMarketData['Response'], col=cols)
+```
+
+Observing the distribution, the data is imbalanced and it has to be balanced either using undersampling or oversampling. The most common and widely used method of oversampling is SMOTE. SMOTE stands for Synthetic Minority Oversampling TEchnique. In this, we form clusters and oversample the minority in order to minimize the imbalance in the classes available in the training data.
+
+```{r}
+library(DMwR)
+balInsMarketData <- SMOTE(Response ~ ., data = insuranceMarketData, perc.over = 250, perc.under = 150)
+summary(balInsMarketData)
+cols <- c("red","green")
+plot(balInsMarketData['Response'], col=cols)
+```
+
+As we can see, oversampling has helped in making the data more balanced in terms of the output classes. 
+
+**Data Analysis**
+
+The next step involves analysing the data available to us and draw inferences. We can broadly divide the variables available to us in Categorical/Discrete and Continuous variables. Representing them through the following graphs, we observe:
+
+```{r}
+
+# Performing analysis for categorical data
+
+plot(balInsMarketData$Coverage, balInsMarketData$Response,
+     xlab="Coverage", ylab="Response", col=cols)
+plot(balInsMarketData$Policy.Type, balInsMarketData$Response,
+     xlab="Policy Type", ylab="Response", col=cols)
+plot(balInsMarketData$Policy, balInsMarketData$Response,
+     xlab="Policy", ylab="Response", col=cols)
+plot(balInsMarketData$Renew.Offer.Type, balInsMarketData$Response,
+     xlab="Renew Offer Type", ylab="Response", col=cols)
+plot(balInsMarketData$Number.of.Policies, balInsMarketData$Response,
+     xlab="Number of Policies", ylab="Response", col=cols)
+plot(balInsMarketData$Sales.Channel, balInsMarketData$Response,
+     xlab="Sales Channel", ylab="Response", col=cols)
+```
+
+`Coverage`, `Policy`, `Policy Type` and `Sales Channel`seem to have a very balanced proprtion amongst `Response` variable. `Number of Policies` and `Number of Open Complaints` have a lot of classes but the majority of the data is well distributed and does not seem to be plaing a huge role in deciding the output variable. `Renew Offer Type` seems to have a huge impact on the people's decision and appears to be an important aspect in influencing people's decision in the favour of the company.
+
+```{r}
+
+# Performing analysis for continuous data
+
+plot(balInsMarketData$Customer.Lifetime.Value, balInsMarketData$Response, xlab="CLV",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+plot(balInsMarketData$Income, balInsMarketData$Response, xlab="Income",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+plot(balInsMarketData$Months.Since.Last.Claim, balInsMarketData$Response, xlab="Months Since Last Claim",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+plot(balInsMarketData$Monthly.Premium.Auto, balInsMarketData$Response, xlab="Monthly Premium Auto",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+plot(balInsMarketData$Months.Since.Policy.Inception, balInsMarketData$Response, xlab="Policy Inception",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+plot(balInsMarketData$Total.Claim.Amount, balInsMarketData$Response, xlab="Total Claim",
+     ylab="Response", pch = 19, col = cols[(balInsMarketData$Response)])
+
+# second
+
+cdplot(balInsMarketData$Income, balInsMarketData$Response, xlab="Income",
+     ylab="Response")
+
+cdplot(balInsMarketData$Months.Since.Last.Claim, balInsMarketData$Response, xlab="Months Since Last Claim",
+     ylab="Response")
+
+cdplot(balInsMarketData$Monthly.Premium.Auto, balInsMarketData$Response, xlab="Monthly Premium Auto",
+     ylab="Response")
+
+cdplot(balInsMarketData$Months.Since.Policy.Inception, balInsMarketData$Response, xlab="Policy Inception",
+     ylab="Response")
+
+cdplot(balInsMarketData$Total.Claim.Amount, balInsMarketData$Response, xlab="Total Claim",
+     ylab="Response")
+
+```
+
+For `Customer Lifetime Value`, people with higher value seem to be more inclined towards responding No. `Income` shows people ranging from income 1,500 to 3,500 are inclined towards responding positively. Months since Last Claim and Monthly Premium Auto seems to have a random normal distribution and it is difficult to arrive at any certain conclusion. `Policy Inception` is balanced as well and high `Total Claim` is not positive for our purpose.
+
+**Model Building**
+
+The first step is to split the data into train and test data. We will be splitting it 70:30.
+
+```{r}
+train <- sample(nrow(balInsMarketData), 0.7*nrow(balInsMarketData), replace = FALSE)
+balInsMarketDataTrain <- balInsMarketData[train,]
+balInsMarketDataTest <- balInsMarketData[-train,]
+```
+
+The first model we will be building will be decision tree model which we will build using *rpart* library in R. 
+
+```{r}
+library(rpart)
+library(rpart.plot)
+treeFitModel <- rpart(Response ~ ., data = balInsMarketDataTrain, method = 'class', control = rpart.control(cp=0))
+PredBase <- predict(treeFitModel, balInsMarketDataTrain, type = 'class')
+accuracyBase <- mean(PredBase == balInsMarketDataTest$Response)
+accuracyBase
+printcp(treeFitModel)
+plotcp(treeFitModel)
+```
+
+The printcp() and plotcp() functions help in understanding the pruning of the tree to enhance performance and improve optimality. There are two ways in which pruning can be performed, either by pre pruning, where we change the min split, min bucket etc. while making the decision tree. Minimum value of *xerror* helps in finding optimal value of CP.
+
+*Pre-Pruning*
+
+```{r}
+treeFitPrePrunedModel <- rpart(Response ~ ., data = balInsMarketDataTrain, method = 'class', control = rpart.control(cp=0, maxdepth = 12,minsplit = 100))
+PredBasePrePruned <- predict(treeFitPrePrunedModel, balInsMarketDataTest, type = 'class')
+accuracyPrePruned <- mean(PredBasePrePruned == balInsMarketDataTest$Response)
+accuracyPrePruned
+```
+
+*Post-Pruning*
+
+This helps in pruning the tree after it is completely unfolded. We can do this by defining the value of CP obtained in the base model.
+
+```{r}
+treeFitPostPrunedModel <- prune(treeFitModel, cp = 0.00092)
+PredBasePostPruned <- predict(treeFitPostPrunedModel, balInsMarketDataTest, type = 'class')
+accuracyPostPruned <- mean(PredBasePostPruned == balInsMarketDataTest$Response)
+accuracyPostPruned
+```
+
+*Random Forest Classification*
+
+Random forest classification can also be used in order to attempt to enhance performance by using either GINI or deviance or Miscalssfication error as the loss function. We use the library `randomForest` to perform model building and understand the importance of variables. 
+
+```{r}
+library("randomForest")
+
+rfFit <- randomForest(Response ~ .,
+                      data = balInsMarketDataTrain, 
+                      ntree = 1000,                 
+                      mtry = 4,                     
+                      importance = TRUE)      
+
+rfFit
+```
+
+```{r}
+predRF <- predict(rfFit, balInsMarketDataTest, type="class")
+mean(predRF == balInsMarketDataTest$Response)
+
+importance(rfFit)
+
+varImpPlot(rfFit)
+```
+
+As we can see from the graph, the three most important variables in Insurance Policy are `Renew.Offer.Type`, `Income` and `Total.Claim.Account`. Getting rid of the last few variables can help in improving the accuracy and getting an optimal random forest tree. They can be considered important as - 
+
+*Renew offer type* is highly likely to determine if someone is willing to take up the offer. As we can see through the initial plots, certain offers are highly unlikely to be accepted while others are more likely. 
+
+*Income* also acts plays an important role as was guessed while performing the initial data analysis. People with higher incomes do not find the offer attractive enough and either the offer has to be ailroed to suit their needs or target audience should be reevaluated. 
+
+*Total claim account* probably plays such a huge role as in the initial graph as high claim amounts do not attract people as much.
+
+Hence, as discussed in the above section, modifications should be made to the target audience and the methodology of offers in order to get more positive responses. 
+
+Now, as the final step, we perform prediction using random forest classification and save it.
+
+**Prediction**
+
+```{r}
+
+marketPred <- read.csv("assign2_MarketPred.csv", header = TRUE)
+marketPredFiltered = subset(marketPred, select = -c(Customer, State, Education, Effective.To.Date, EmploymentStatus, Gender, Location.Code, Marital.Status, Vehicle.Class, Vehicle.Size, Number.of.Open.Complaints))
+marketPredFiltered$Number.of.Policies <- as.factor(marketPredFiltered$Number.of.Policies)
+marketPredFiltered$Monthly.Premium.Auto <- as.numeric(marketPredFiltered$Monthly.Premium.Auto)
+marketPredFiltered$Income <- as.numeric(marketPredFiltered$Income)
+marketPredFiltered$Months.Since.Last.Claim <- as.numeric(marketPredFiltered$Months.Since.Last.Claim)
+marketPredFiltered$Months.Since.Policy.Inception <- as.numeric(marketPredFiltered$Months.Since.Policy.Inception)
+
+levels(marketPredFiltered$Policy) <- levels(marketData$Policy)
+
+str(marketPredFiltered)
+str(balInsMarketDataTrain)
+
+rfP1Pred = predict(rfFit, marketPredFiltered, type="class")
+
+rfP1PredFrame <- data.frame("Response"=rfP1Pred)
+write.csv(rfP1PredFrame, "assign2_MarketPred_Insurance.csv", row.names = TRUE)
+
+```
+
+#### Problem 2
+
+Build an optimal tree-based classification model for `Response` vs both **Demographic Profile** and **Insurance Profile** of a customer. Check the relevant accuracy parameters of your model, and use it to predict `Response` in the `assign2_MarketPred.csv`. 
+
+* Identify the *top three* important variables in this case. 
+* Why are they important? Justify in terms of the Pilot data.
+* How would you influence `Response` using these variables?
+
+---
+
+#### Answer 2
+
+**Exploratory Data Analysis**
+
+The overall structure of this solution remains more or less similar to the previous one. There are a few other parameters that are taken into consideration (Demographic Policy).
+
+We start off by dropping columns that do not play any role in determining the outcome of our predictions.
+
+```{r}
+overallMarketData <- subset(marketData, select = -c(Customer, Effective.To.Date, Number.of.Open.Complaints))
+```
+
+*Data Pre-Processing* will be performed as in Answer 1.
+
+```{r}
+overallMarketData$Number.of.Policies <- as.factor(overallMarketData$Number.of.Policies)
+```
+
+
+Understanding the distribution of `Response` will be imbalanced as in the previous part.
+
+```{r}
+cols <- c("red","green")
+plot(overallMarketData['Response'], col=cols)
+```
+
+Performing Over sampling using SMOTE.
+
+```{r}
+balOvrMarketData <- SMOTE(Response ~ ., data = overallMarketData, perc.over = 250, perc.under = 150)
+cols <- c("red","green")
+plot(balOvrMarketData['Response'], col=cols)
+```
+
+*Data Analysis*
+The following are the plots for categorical variables.
+
+```{r}
+
+plot(balOvrMarketData$State, balOvrMarketData$Response,
+     xlab="State", ylab="Response", col=cols)
+plot(balOvrMarketData$Coverage, balOvrMarketData$Response,
+     xlab="Coverage", ylab="Response", col=cols)
+plot(balOvrMarketData$Education, balOvrMarketData$Response,
+     xlab="Education", ylab="Response", col=cols)
+plot(balOvrMarketData$EmploymentStatus, balOvrMarketData$Response,
+     xlab="Employment Status", ylab="Response", col=cols)
+plot(balOvrMarketData$Gender, balOvrMarketData$Response,
+     xlab="Gender", ylab="Response", col=cols)
+plot(balOvrMarketData$Location.Code, balOvrMarketData$Response,
+     xlab="Location Code", ylab="Response", col=cols)
+plot(balOvrMarketData$Marital.Status, balOvrMarketData$Response,
+     xlab="Marital Status", ylab="Response", col=cols)
+plot(balOvrMarketData$Policy.Type, balOvrMarketData$Response,
+     xlab="Policy Type", ylab="Response", col=cols)
+plot(balOvrMarketData$Policy, balOvrMarketData$Response,
+     xlab="Policy", ylab="Response", col=cols)
+plot(balOvrMarketData$Renew.Offer.Type, balOvrMarketData$Response,
+     xlab="Renew Offer Type", ylab="Response", col=cols)
+plot(balOvrMarketData$Number.of.Policies, balOvrMarketData$Response,
+     xlab="Number of Policies", ylab="Response", col=cols)
+plot(balOvrMarketData$Sales.Channel, balOvrMarketData$Response,
+     xlab="Sales Channel", ylab="Response", col=cols)
+plot(balOvrMarketData$Vehicle.Class, balOvrMarketData$Response,
+     xlab="Vehicle Class", ylab="Response", col=cols)
+plot(balOvrMarketData$Vehicle.Size, balOvrMarketData$Response,
+     xlab="Vehicle Size", ylab="Response", col=cols)
+```
+
+Understanding the relationship between continuous variables and the `Response` will be same as Answer 1 as the continuous variables are all Insurance Policy.
+
+*Model Building*
+
+The first step is to split the data into training and testing.
+
+```{r}
+train <- sample(nrow(balOvrMarketData), 0.7*nrow(balOvrMarketData), replace = FALSE)
+balOvrMarketDataTrain <- balOvrMarketData[train,]
+balOvrMarketDataTest <- balOvrMarketData[-train,]
+```
+
+We have followed the same method as in the previous part to obtain results discussed towards the end.
+
+```{r}
+treeFitModel <- rpart(Response ~ ., data = balOvrMarketDataTrain, method = 'class', control = rpart.control(cp=0))
+PredBase <- predict(treeFitModel, balOvrMarketDataTest, type = 'class')
+accuracyBase <- mean(PredBase == balOvrMarketDataTest$Response)
+accuracyBase
+printcp(treeFitModel)
+plotcp(treeFitModel)
+```
+
+*Pre-Pruning*
+
+```{r}
+treeFitPrePrunedModel <- rpart(Response ~ ., data = balOvrMarketDataTrain, method = 'class', control = rpart.control(cp=0, maxdepth = 12,minsplit = 100))
+PredBasePrePruned <- predict(treeFitPrePrunedModel, balOvrMarketDataTest, type = 'class')
+accuracyPrePruned <- mean(PredBasePrePruned == balOvrMarketDataTest$Response)
+accuracyPrePruned
+
+```
+
+*Post-Pruning*
+
+```{r}
+treeFitPostPrunedModel <- prune(treeFitModel, cp = 0.00092)
+PredBasePostPruned <- predict(treeFitPostPrunedModel, balOvrMarketDataTest, type = 'class')
+accuracyPostPruned <- mean(PredBasePostPruned == balOvrMarketDataTest$Response)
+accuracyPostPruned
+```
+
+Confusion matrix for accuracy comparisons.
+
+```{r}
+predictTest <- predict(treeFitModel, balOvrMarketDataTest, type = 'class')
+table_conf <- table(balOvrMarketDataTest$Response, predictTest)
+table_conf
+accuracyTest <- sum(diag(table_conf))/sum(table_conf)
+accuracyTest
+
+predictTestPrePrune <- predict(treeFitPrePrunedModel, balOvrMarketDataTest, type = 'class')
+table_conf_pre <- table(balOvrMarketDataTest$Response, predictTestPrePrune)
+table_conf_pre
+accuracyTestPre <- sum(diag(table_conf_pre))/sum(table_conf_pre)
+accuracyTestPre
+
+predictTestPostPrune <- predict(treeFitPostPrunedModel, balOvrMarketDataTest, type = 'class')
+table_conf_post <- table(balOvrMarketDataTest$Response, predictTestPostPrune)
+table_conf_post
+accuracyTestPost <- sum(diag(table_conf_post))/sum(table_conf_post)
+accuracyTestPost
+
+```
+
+*Random Forest*
+
+```{r}
+rfFit <- randomForest(Response ~ .,
+                      data = balOvrMarketDataTrain,
+                      ntree = 1000,                 
+                      mtry = 4,                     
+                      importance = TRUE)      
+
+rfFit
+```
+
+```{r}
+predRF <- predict(rfFit, balOvrMarketDataTest, type="class")
+mean(predRF == balOvrMarketDataTest$Response)
+
+importance(rfFit)
+
+varImpPlot(rfFit)
+```
+
+Unlike oart 1, here we can see that there is a different combination of 3 that seem to be the most important ones. According to mean, it is `Renew.Offer.Type`, `EmploymentStatus` and `Months.Since.Last.Claim` but according to GINI it is `Renew.Offer.Type`, `Income` and `Customer.Lifetime.Value`. We can use Boruta but in general it can be said that the `Renew.Offer.Type` and `Income` are largely deiciding the outcome and should be focused on in order to avail maximum benefits.
+
+Boruta can be used in order to find out important features. The code is given as follows:
+
+```{r}
+#install.packages("Boruta")
+library(Boruta)
+
+boruta.bank_train <- Boruta(Response ~ ., data = balOvrMarketDataTrain, doTrace = 2)
+print(boruta.bank_train)
+```
+
+We can perform prediction as follows:
+
+```{r}
+marketPred <- read.csv("assign2_MarketPred.csv", header = TRUE)
+marketPredFiltered = subset(marketPred, select = -c(Customer, Effective.To.Date, Number.of.Open.Complaints))
+marketPredFiltered$Number.of.Policies <- as.factor(marketPredFiltered$Number.of.Policies)
+marketPredFiltered$Monthly.Premium.Auto <- as.numeric(marketPredFiltered$Monthly.Premium.Auto)
+marketPredFiltered$Income <- as.numeric(marketPredFiltered$Income)
+marketPredFiltered$Months.Since.Last.Claim <- as.numeric(marketPredFiltered$Months.Since.Last.Claim)
+marketPredFiltered$Months.Since.Policy.Inception <- as.numeric(marketPredFiltered$Months.Since.Policy.Inception)
+
+levels(marketPredFiltered$Policy) <- levels(marketData$Policy)
+
+rfP2Pred = predict(rfFit, marketPredFiltered, type="class")
+
+rfP2PredFrame <- data.frame("Response"=rfP2Pred)
+write.csv(rfP2PredFrame, "assign2_MarketPred_Overall.csv", row.names = TRUE)
+
+```
